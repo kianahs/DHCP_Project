@@ -1,110 +1,120 @@
 import socket
 import threading
+from uuid import getnode as get_mac
+import struct
+import Packet
+import random
+import socket
+import struct
+import json
+
 
 MAX_BYTES = 1024
 
 serverPort = 67
 clientPort = 68
 
+def ip2int(addr):
+    return struct.unpack("!I", socket.inet_aton(addr))[0]
+
+def offer_ip():
+
+    f = open('configs.json', )
+    data = json.load(f)
+    start = data['range']['from']
+    stop = data['range']['to']
+    f.close()
+    start_num = ip2int(start)
+    stop_num = ip2int(stop)
+    random_ip = socket.inet_ntoa(struct.pack('>I', random.randint(start_num, stop_num)))
+    print("offered ip is:", random_ip)
+    return random_ip, "127.0.0.1"
 
 class DHCP_server(object):
 
     def server(self):
-        print("DHCP server is starting...\n")
+
+        print("[SERVER]: SERVER STARTS")
 
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         s.bind(('', serverPort))
+        # print(s.getsockname())
         dest = ('255.255.255.255', clientPort)
+        clients_transactions = []
 
         while 1:
             try:
-                print("Wait DHCP discovery.")
-                data, address = s.recvfrom(MAX_BYTES)
-                print("Receive DHCP discovery from ", address)
-                # print(data)
-                t = threading.Thread(target=self.talk, args=(address, dest, s))
-                t.start()
+                print("[SERVER]: Wait for DHCP discovery.")
+                discovery, address = s.recvfrom(MAX_BYTES)
+                if discovery[4:8] not in clients_transactions and discovery[240:243] == b'\x35\x01\x01':
+
+                    print("[SERVER]: Receive DHCP discovery from ", address)
+                    clients_transactions.append(discovery[4:8])
+
+                    t = threading.Thread(target=self.talk, args=(address, dest, s, discovery, discovery[4:8]))
+                    t.start()
 
             except:
                 raise
 
-    def talk(self, address, dest, s):
-        print("Send DHCP offer.")
-        data = DHCP_server.offer_get(self)
-        s.sendto(data, dest)
+    def talk(self, address, dest, s, discovery, transactionID):
+
+        dhcp_offer = DHCP_server.build_offer(self, discovery)
+        print("[SERVER]: Send DHCP offer")
+        s.sendto(dhcp_offer, dest)
+
         while 1:
             try:
-                print("Wait DHCP request.")
-                data, address = s.recvfrom(MAX_BYTES)
-                print("Receive DHCP request.")
-                # print(data)
+                # print("transaction id",socket.inet_ntoa(transactionID))
+                # print("transaction id", socket.inet_ntoa(dhcp_offer[4:8]))
+                print("[SERVER]: Wait DHCP request.")
+                dhcp_request, address = s.recvfrom(MAX_BYTES)
+                print(len(dhcp_request))
+                print("11111")
+                print(transactionID)
+                print(dhcp_request[4:8])
+                print(transactionID)
 
-                print("Send DHCP pack.\n")
-                data = DHCP_server.pack_get(self)
-                s.sendto(data, dest)
-                break
-            except:
+                if dhcp_request[4:8] == transactionID and dhcp_request != dhcp_offer:
+
+                    print("[SERVER]: Receive DHCP request.")
+                    # print(data)
+                    dhcp_ack = DHCP_server.build_ack(self, dhcp_request)
+                    s.sendto(dhcp_ack, dest)
+                    print("[SERVER]: Send DHCP ack.\n")
+                    break
+            except :
                 raise
 
-    def offer_get(self):
 
-        OP = bytes([0x02])
-        HTYPE = bytes([0x01])
-        HLEN = bytes([0x06])
-        HOPS = bytes([0x00])
-        XID = bytes([0x39, 0x03, 0xF3, 0x26])
-        SECS = bytes([0x00, 0x00])
-        FLAGS = bytes([0x00, 0x00])
-        CIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        YIADDR = bytes([0xC0, 0xA8, 0x01, 0x64])  # 192.168.1.100
-        SIADDR = bytes([0xC0, 0xA8, 0x01, 0x01])  # 192.168.1.1
-        GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR1 = bytes([0x00, 0x05, 0x3C, 0x04])
-        CHADDR2 = bytes([0x8D, 0x59, 0x00, 0x00])
-        CHADDR3 = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR4 = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR5 = bytes(192)
-        Magiccookie = bytes([0x63, 0x82, 0x53, 0x63])
-        DHCPOptions1 = bytes([53, 1, 2])  # DHCP Offer
-        DHCPOptions2 = bytes([1, 4, 0xFF, 0xFF, 0xFF, 0x00])  # 255.255.255.0 subnet mask
-        DHCPOptions3 = bytes([3, 4, 0xC0, 0xA8, 0x01, 0x01])  # 192.168.1.1 router
-        DHCPOptions4 = bytes([51, 4, 0x00, 0x01, 0x51, 0x80])  # 86400s(1 day) IP address lease time
-        DHCPOptions5 = bytes([54, 4, 0xC0, 0xA8, 0x01, 0x01])  # DHCP server
 
-        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR1 + CHADDR2 + CHADDR3 + CHADDR4 + CHADDR5 + Magiccookie + DHCPOptions1 + DHCPOptions2 + DHCPOptions3 + DHCPOptions4 + DHCPOptions5
 
+    def build_offer(self,discovery):
+
+        packet = Packet.DHCPOffer(discovery)
+        offered_ip, next_server = offer_ip()
+        package = packet.buildPacket(offered_ip, next_server)
         return package
 
-    def pack_get(self):
-        OP = bytes([0x02])
-        HTYPE = bytes([0x01])
-        HLEN = bytes([0x06])
-        HOPS = bytes([0x00])
-        XID = bytes([0x39, 0x03, 0xF3, 0x26])
-        SECS = bytes([0x00, 0x00])
-        FLAGS = bytes([0x00, 0x00])
-        CIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        YIADDR = bytes([0xC0, 0xA8, 0x01, 0x64])
-        SIADDR = bytes([0xC0, 0xA8, 0x01, 0x01])
-        GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR1 = bytes([0x00, 0x05, 0x3C, 0x04])
-        CHADDR2 = bytes([0x8D, 0x59, 0x00, 0x00])
-        CHADDR3 = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR4 = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR5 = bytes(192)
-        Magiccookie = bytes([0x63, 0x82, 0x53, 0x63])
-        DHCPOptions1 = bytes([53, 1, 5])  # DHCP ACK(value = 5)
-        DHCPOptions2 = bytes([1, 4, 0xFF, 0xFF, 0xFF, 0x00])  # 255.255.255.0 subnet mask
-        DHCPOptions3 = bytes([3, 4, 0xC0, 0xA8, 0x01, 0x01])  # 192.168.1.1 router
-        DHCPOptions4 = bytes([51, 4, 0x00, 0x01, 0x51, 0x80])  # 86400s(1 day) IP address lease time
-        DHCPOptions5 = bytes([54, 4, 0xC0, 0xA8, 0x01, 0x01])  # DHCP server
+    def build_ack(self,dhcp_request):
 
-        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR1 + CHADDR2 + CHADDR3 + CHADDR4 + CHADDR5 + Magiccookie + DHCPOptions1 + DHCPOptions2 + DHCPOptions3 + DHCPOptions4 + DHCPOptions5
-
+        packet = Packet.DHCPAcknowledgement(dhcp_request)
+        package = packet.buildPacket()
         return package
 
+    def getMacInBytes(self):
+
+        mac = str(hex(get_mac()))
+        mac = mac[2:]
+        while len(mac) < 12:
+            mac = '0' + mac
+        macb = b''
+        for i in range(0, 12, 2):
+            m = int(mac[i:i + 2], 16)
+            macb += struct.pack('!B', m)
+        return macb
 
 if __name__ == '__main__':
     dhcp_server = DHCP_server()

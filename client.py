@@ -1,4 +1,7 @@
 import socket, sys
+import Packet
+from uuid import getnode as get_mac
+import struct
 
 MAX_BYTES = 1024
 
@@ -7,83 +10,84 @@ clientPort = 68
 
 
 class DHCP_client(object):
+
     def client(self):
-        print("DHCP client is starting...\n")
+
+        print("[CLIENT]: DHCP client is starting...\n")
         dest = ('<broadcast>', serverPort)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         s.bind(('0.0.0.0', clientPort))
 
-        print("Send DHCP discovery.")
-        data = DHCP_client.discover_get(self)
-        s.sendto(data, dest)
+        print("[CLIENT]: Send DHCP discovery.")
+        dhcp_discovery = DHCP_client.build_discover(self)
+        s.sendto(dhcp_discovery, dest)
+        dhcp_request = b''
+        dhcp_offer = b''
+        flag = True
 
-        data, address = s.recvfrom(MAX_BYTES)
-        print("Receive DHCP offer.")
+        while flag:
+
+            dhcp_offer, address = s.recvfrom(MAX_BYTES)
+            if dhcp_offer[4:8] == dhcp_discovery[4:8] and dhcp_offer != dhcp_discovery:
+                print("[CLIENT]: Receive DHCP offer.")
+                offered_ip = socket.inet_ntoa(dhcp_offer[16:20])
+                print("OFFERED IP --> ", offered_ip)
+
+                dhcp_request = DHCP_client.build_request(self, dhcp_offer)
+                print(socket.inet_ntoa(dhcp_request[4:8]))
+                print(socket.inet_ntoa(dhcp_offer[4:8]))
+                print(socket.inet_ntoa(dhcp_discovery[4:8]))
+                print("request size {} discovery size {} offer size {}".format(len(dhcp_request),len(dhcp_discovery), len(dhcp_offer)))
+                s.sendto(dhcp_request, dest)
+                s.sendto(dhcp_request, dest)
+                print("[CLIENT]: Send DHCP request.")
+                flag = False
+
+
+        while not flag:
+
+            dhcp_ack, address = s.recvfrom(MAX_BYTES)
+
+            if dhcp_ack[4:8] == dhcp_discovery[4:8] and dhcp_ack != dhcp_request and dhcp_ack != dhcp_offer and dhcp_ack != dhcp_discovery:
+
+                print("[CLIENT]: Receive DHCP pack.\n")
+                received_ip = socket.inet_ntoa(dhcp_ack[16:20])
+                print("RECEIVED IP --> ", received_ip )
+                flag = True
+
+        # print(data)
         # print(data)
 
-        print("Send DHCP request.")
-        data = DHCP_client.request_get(self)
-        s.sendto(data, dest)
-
-        data, address = s.recvfrom(MAX_BYTES)
-        print("Receive DHCP pack.\n")
-        # print(data)
-
-    def discover_get(self):
-        OP = bytes([0x01])
-        HTYPE = bytes([0x01])
-        HLEN = bytes([0x06])
-        HOPS = bytes([0x00])
-        XID = bytes([0x39, 0x03, 0xF3, 0x26])
-        SECS = bytes([0x00, 0x00])
-        FLAGS = bytes([0x00, 0x00])
-        CIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        YIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        SIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR1 = bytes([0x00, 0x05, 0x3C, 0x04])
-        CHADDR2 = bytes([0x8D, 0x59, 0x00, 0x00])
-        CHADDR3 = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR4 = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR5 = bytes(192)
-        Magiccookie = bytes([0x63, 0x82, 0x53, 0x63])
-        DHCPOptions1 = bytes([53, 1, 1])
-        DHCPOptions2 = bytes([50, 4, 0xC0, 0xA8, 0x01, 0x64])
-
-        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR1 + CHADDR2 + CHADDR3 + CHADDR4 + CHADDR5 + Magiccookie + DHCPOptions1 + DHCPOptions2
+    def build_discover(self):
+        self.mac = self.getMacInBytes()
+        self.discoverPacket = Packet.DHCPDiscover()
+        package = self.discoverPacket.buildPacket(self.mac)
 
         return package
 
-    def request_get(self):
-        OP = bytes([0x01])
-        HTYPE = bytes([0x01])
-        HLEN = bytes([0x06])
-        HOPS = bytes([0x00])
-        XID = bytes([0x39, 0x03, 0xF3, 0x26])
-        SECS = bytes([0x00, 0x00])
-        FLAGS = bytes([0x00, 0x00])
-        CIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        YIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        SIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        GIADDR = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR1 = bytes([0x00, 0x0C, 0x29, 0xDD])
-        CHADDR2 = bytes([0x5C, 0xA7, 0x00, 0x00])
-        CHADDR3 = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR4 = bytes([0x00, 0x00, 0x00, 0x00])
-        CHADDR5 = bytes(192)
-        Magiccookie = bytes([0x63, 0x82, 0x53, 0x63])
-        DHCPOptions1 = bytes([53, 1, 3])
-        DHCPOptions2 = bytes([50, 4, 0xC0, 0xA8, 0x01, 0x64])
-        DHCPOptions3 = bytes([54, 4, 0xC0, 0xA8, 0x01, 0x01])
+    def build_request(self, dhcp_offer):
 
-        package = OP + HTYPE + HLEN + HOPS + XID + SECS + FLAGS + CIADDR + YIADDR + SIADDR + GIADDR + CHADDR1 + CHADDR2 + CHADDR3 + CHADDR4 + CHADDR5 + Magiccookie + DHCPOptions1 + DHCPOptions2 + DHCPOptions3
-
+        requestPacket = Packet.DHCPRequest(dhcp_offer)
+        package = requestPacket.buildPacket()
         return package
 
+    def getMacInBytes(self):
+
+        mac = str(hex(get_mac()))
+        mac = mac[2:]
+        while len(mac) < 12:
+            mac = '0' + mac
+        macb = b''
+        for i in range(0, 12, 2):
+            m = int(mac[i:i + 2], 16)
+            macb += struct.pack('!B', m)
+        return macb
 
 if __name__ == '__main__':
     dhcp_client = DHCP_client()
     dhcp_client.client()
+
     while input() != "1":
         pass
+
