@@ -1,6 +1,6 @@
 import socket
 import threading
-from uuid import getnode as get_mac
+import generateMac
 import struct
 import Packet
 import random
@@ -13,20 +13,53 @@ MAX_BYTES = 1024
 
 serverPort = 67
 clientPort = 68
+mac_ip = {}
+
+def mcbytes_to_str(macbytes):
+   mac = "%x:%x:%x:%x:%x:%x" % struct.unpack("BBBBBB", macbytes)
+   return mac.replace(':', '')
+
+
 
 def ip2int(addr):
     return struct.unpack("!I", socket.inet_aton(addr))[0]
 
-def offer_ip():
+
+def offer_ip(mac):
 
     f = open('configs.json', )
     data = json.load(f)
-    start = data['range']['from']
-    stop = data['range']['to']
+    pool_mode = data['pool_mode']
+    start = ''
+    stop = ''
+
+    reservation_list = data['reservation_list']
+    # print(type(reservation_list))
+    black_list = data['black_list']
+
+    if pool_mode == 'range':
+        start = data['range']['from']
+        stop = data['range']['to']
+    elif pool_mode == 'subnet':
+        start = data['subnet']['ip_block']
+        stop = data['subnet']['subnet_mask']
+
     f.close()
     start_num = ip2int(start)
     stop_num = ip2int(stop)
     random_ip = socket.inet_ntoa(struct.pack('>I', random.randint(start_num, stop_num)))
+
+    if mac in mac_ip.keys():
+        print("mac already has ip")
+        return mac_ip[mac], "127.0.0.1"
+
+    if mac in reservation_list.keys():
+        print("mac address is in reservation list")
+        return None, "127.0.0.1"
+    if mac in black_list:
+        print("mac address is in black list")
+        return None, "127.0.0.1"
+
     print("offered ip is:", random_ip)
     return random_ip, "127.0.0.1"
 
@@ -62,6 +95,10 @@ class DHCP_server(object):
     def talk(self, address, dest, s, discovery, transactionID):
 
         dhcp_offer = DHCP_server.build_offer(self, discovery)
+
+        if dhcp_offer == None:
+            return
+
         print("[SERVER]: Send DHCP offer")
         s.sendto(dhcp_offer, dest)
 
@@ -93,28 +130,26 @@ class DHCP_server(object):
 
     def build_offer(self,discovery):
 
+        mac = mcbytes_to_str(discovery[28:34])
         packet = Packet.DHCPOffer(discovery)
-        offered_ip, next_server = offer_ip()
+        offered_ip, next_server = offer_ip(mac)
+        if offered_ip == None:
+            return None
+        while offered_ip == "192.168.1.0" and offered_ip not in mac_ip:
+            print("[WARNING]: offered ip not usable generating new one!")
+            offered_ip, next_server = offer_ip(mac)
+
         package = packet.buildPacket(offered_ip, next_server)
         return package
 
     def build_ack(self,dhcp_request):
 
+        mac_ip[mcbytes_to_str(dhcp_request[28:34])] = socket.inet_ntoa(dhcp_request[16:20])
         packet = Packet.DHCPAcknowledgement(dhcp_request)
         package = packet.buildPacket()
         return package
 
-    def getMacInBytes(self):
 
-        mac = str(hex(get_mac()))
-        mac = mac[2:]
-        while len(mac) < 12:
-            mac = '0' + mac
-        macb = b''
-        for i in range(0, 12, 2):
-            m = int(mac[i:i + 2], 16)
-            macb += struct.pack('!B', m)
-        return macb
 
 if __name__ == '__main__':
     dhcp_server = DHCP_server()

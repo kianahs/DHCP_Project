@@ -1,7 +1,8 @@
 import socket, sys
 import Packet
-from uuid import getnode as get_mac
+import generateMac
 import struct
+import binascii
 
 MAX_BYTES = 1024
 
@@ -73,16 +74,21 @@ class DHCP_client(object):
         return package
 
     def getMacInBytes(self):
+        mac = generateMac.getRandomMac()
+        print(type(mac))
+        print(mac)
+        macbytes = binascii.unhexlify(mac)
 
-        mac = str(hex(get_mac()))
-        mac = mac[2:]
-        while len(mac) < 12:
-            mac = '0' + mac
-        macb = b''
-        for i in range(0, 12, 2):
-            m = int(mac[i:i + 2], 16)
-            macb += struct.pack('!B', m)
-        return macb
+        print(type(macbytes))
+        # mac = str(hex(macbytes))
+        # mac = mac[2:]
+        # while len(mac) < 12:
+        #     mac = '0' + mac
+        # macb = b''
+        # for i in range(0, 12, 2):
+        #     m = int(mac[i:i + 2], 16)
+        #     macb += struct.pack('!B', m)
+        return macbytes
 
 if __name__ == '__main__':
     dhcp_client = DHCP_client()
