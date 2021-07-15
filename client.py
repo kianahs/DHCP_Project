@@ -8,7 +8,7 @@ MAX_BYTES = 1024
 
 serverPort = 67
 clientPort = 68
-
+# TIMEOUT =
 
 class DHCP_client(object):
 
