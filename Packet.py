@@ -76,7 +76,9 @@ class DHCPOffer:
         # packet += b'\x00\x00\x00\x00\x00\x00\x00\x00\x00\x00'  # Client hardware address padding: 00000000000000000000
         packet += b'\x00' * 67  # Server host name not given
         packet += b'\x00' * 125  # Boot file name not given
+        print(len(packet))
         packet += b'\x63\x82\x53\x63'  # Magic cookie: DHCP
+        print(len(packet))
         # DHCP IP Address
         packet += b'\x35\x01\x02'  # Option: DHCP Message Type = DHCP Offer
 

@@ -162,13 +162,13 @@ class DHCP_server(object):
 
                     print("[SERVER]: Receive DHCP request.")
                     # print(data)
+                    # time.sleep(200)
                     dhcp_ack = DHCP_server.build_ack(self, dhcp_request)
                     s.sendto(dhcp_ack, dest)
+                    global time_starts
+                    start = time.time()
                     if dhcp_ack is not None:
                         print("[SERVER]: Send DHCP ack.\n")
-
-                        global time_starts
-                        start = time.time()
                         time_starts[mcbytes_to_str(dhcp_ack[28:34])] = start
                         global lease_time
                         while time.time() - start <= lease_time:

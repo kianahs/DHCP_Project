@@ -8,7 +8,7 @@
 "ip_block": "192.168.1.0",
 "subnet_mask": "255.255.255.224"
 },
-"lease_time": 100,
+"lease_time": 30,
 "reservation_list": {
 "ee:b4:f6:7e:01:45": "192.168.1.50",
 "76:f4:2f:49:01:ec": "192.168.1.83"

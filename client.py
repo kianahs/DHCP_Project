@@ -3,22 +3,38 @@ import Packet
 import generateMac
 import struct
 import binascii
-
+import time
 MAX_BYTES = 1024
 
 serverPort = 67
 clientPort = 68
-# TIMEOUT =
+TIMEOUT = 10
+Lease_time = 30
+initial_interval = 10
+backOff_cutOff = 120
+received_ip = None
+lease_time_start = 0
 
 class DHCP_client(object):
 
     def client(self):
+
+        global received_ip
+        global lease_time_start
+        global Lease_time
 
         print("[CLIENT]: DHCP client is starting...\n")
         dest = ('<broadcast>', serverPort)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         s.bind(('0.0.0.0', clientPort))
+        self.start_communicate(s, dest)
+
+    def start_communicate(self, s, dest):
+        global received_ip
+        global lease_time_start
+        global Lease_time
+        global TIMEOUT
 
         print("[CLIENT]: Send DHCP discovery.")
         dhcp_discovery = DHCP_client.build_discover(self)
@@ -30,35 +46,50 @@ class DHCP_client(object):
         while flag:
 
             dhcp_offer, address = s.recvfrom(MAX_BYTES)
-            if dhcp_offer[4:8] == dhcp_discovery[4:8] and dhcp_offer != dhcp_discovery:
+
+            if dhcp_offer[4:8] == dhcp_discovery[4:8] and dhcp_offer[230:233] == b'\x35\x01\x02':
+                # print(len(dhcp_offer))
+                # print(dhcp_offer[230:233])
+                # print(b'\x35\x01\x02')
                 print("[CLIENT]: Receive DHCP offer.")
                 offered_ip = socket.inet_ntoa(dhcp_offer[16:20])
                 print("OFFERED IP --> ", offered_ip)
 
                 dhcp_request = DHCP_client.build_request(self, dhcp_offer)
-                print(socket.inet_ntoa(dhcp_request[4:8]))
-                print(socket.inet_ntoa(dhcp_offer[4:8]))
-                print(socket.inet_ntoa(dhcp_discovery[4:8]))
-                print("request size {} discovery size {} offer size {}".format(len(dhcp_request),len(dhcp_discovery), len(dhcp_offer)))
                 s.sendto(dhcp_request, dest)
                 s.sendto(dhcp_request, dest)
                 print("[CLIENT]: Send DHCP request.")
                 flag = False
 
-
-        while not flag:
+        timeOut_start = time.time()
+        # print(timeOut_start)
+        # time.sleep(8)
+        # print(time.time())
+        while not flag and time.time()-timeOut_start <= TIMEOUT:
 
             dhcp_ack, address = s.recvfrom(MAX_BYTES)
 
-            if dhcp_ack[4:8] == dhcp_discovery[4:8] and dhcp_ack != dhcp_request and dhcp_ack != dhcp_offer and dhcp_ack != dhcp_discovery:
+            if dhcp_ack[4:8] == dhcp_discovery[4:8] and dhcp_ack[230:233] == b'\x35\x01\x05':
+                lease_time_start = time.time()
 
                 print("[CLIENT]: Receive DHCP pack.\n")
                 received_ip = socket.inet_ntoa(dhcp_ack[16:20])
-                print("RECEIVED IP --> ", received_ip )
+                print("RECEIVED IP --> ", received_ip)
                 flag = True
 
-        # print(data)
-        # print(data)
+            while time.time() - lease_time_start <= Lease_time:
+                pass
+
+            received_ip = None
+
+        if not flag:
+            #means time out
+            print("Timeout start again")
+            self.start_communicate(s, dest)
+
+
+
+
 
     def build_discover(self):
         self.mac = self.getMacInBytes()
@@ -78,16 +109,6 @@ class DHCP_client(object):
         print(type(mac))
         print(mac)
         macbytes = binascii.unhexlify(mac)
-
-        print(type(macbytes))
-        # mac = str(hex(macbytes))
-        # mac = mac[2:]
-        # while len(mac) < 12:
-        #     mac = '0' + mac
-        # macb = b''
-        # for i in range(0, 12, 2):
-        #     m = int(mac[i:i + 2], 16)
-        #     macb += struct.pack('!B', m)
         return macbytes
 
 if __name__ == '__main__':
