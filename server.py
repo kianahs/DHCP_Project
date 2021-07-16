@@ -111,6 +111,7 @@ class DHCP_server(object):
 
         print("[SERVER]: SERVER STARTS")
         global  acked
+        global time_starts
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
@@ -125,13 +126,18 @@ class DHCP_server(object):
                 self.show_clients()
                 print("[SERVER]: Wait for DHCP discovery.")
                 discovery, address = s.recvfrom(MAX_BYTES)
-                if (discovery[4:8] not in clients_transactions or discovery[4:8] not in acked) and discovery[240:243] == b'\x35\x01\x01' :
+                if discovery[240:243] == b'\x35\x01\x01' :
 
-                    print("[SERVER]: Receive DHCP discovery from ", address)
-                    clients_transactions.append(discovery[4:8])
+                    if discovery[4:8] not in clients_transactions or discovery[4:8] not in acked:
 
-                    t = threading.Thread(target=self.talk, args=(address, dest, s, discovery, discovery[4:8]))
-                    t.start()
+                        print("[SERVER]: Receive DHCP discovery from ", address)
+                        clients_transactions.append(discovery[4:8])
+
+                        t = threading.Thread(target=self.talk, args=(address, dest, s, discovery, discovery[4:8]))
+                        t.start()
+                    else:
+
+                        time_starts[mcbytes_to_str(discovery[28:34])] = time.time()
 
             except:
                 raise

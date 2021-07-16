@@ -48,7 +48,7 @@ class DHCP_client(object):
         s.sendto(dhcp_discovery, dest)
         t = threading.Thread(target = self.discovery_timer, args = (s, dest))
         t.start()
-        # time.sleep(20)
+        time.sleep(20)
         dhcp_request = b''
         dhcp_offer = b''
         flag = True
