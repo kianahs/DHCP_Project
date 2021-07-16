@@ -1,4 +1,7 @@
+import random
 import socket, sys
+import threading
+
 import Packet
 import generateMac
 import struct
@@ -8,12 +11,14 @@ MAX_BYTES = 1024
 
 serverPort = 67
 clientPort = 68
-TIMEOUT = 10
+TIMEOUT = 30
 Lease_time = 30
 initial_interval = 10
 backOff_cutOff = 120
 received_ip = None
 lease_time_start = 0
+discovery_timer_start = initial_interval
+previous_interval = initial_interval
 
 class DHCP_client(object):
 
@@ -27,6 +32,7 @@ class DHCP_client(object):
         dest = ('<broadcast>', serverPort)
         s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         s.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         s.bind(('0.0.0.0', clientPort))
         self.start_communicate(s, dest)
 
@@ -35,15 +41,19 @@ class DHCP_client(object):
         global lease_time_start
         global Lease_time
         global TIMEOUT
+        global discovery_timer_start
 
         print("[CLIENT]: Send DHCP discovery.")
         dhcp_discovery = DHCP_client.build_discover(self)
         s.sendto(dhcp_discovery, dest)
+        t = threading.Thread(target = self.discovery_timer, args = (s, dest))
+        t.start()
+        # time.sleep(20)
         dhcp_request = b''
         dhcp_offer = b''
         flag = True
 
-        while flag:
+        while flag and discovery_timer_start > 0:
 
             dhcp_offer, address = s.recvfrom(MAX_BYTES)
 
@@ -65,7 +75,7 @@ class DHCP_client(object):
         # print(timeOut_start)
         # time.sleep(8)
         # print(time.time())
-        while not flag and time.time()-timeOut_start <= TIMEOUT:
+        while not flag and time.time()-timeOut_start <= TIMEOUT and discovery_timer_start > 0:
 
             dhcp_ack, address = s.recvfrom(MAX_BYTES)
 
@@ -82,12 +92,49 @@ class DHCP_client(object):
 
             received_ip = None
 
-        if not flag:
+        if not flag and discovery_timer_start > 0:
+
             #means time out
             print("Timeout start again")
             self.start_communicate(s, dest)
 
 
+
+    def discovery_timer(self, s, dest):
+        global discovery_timer_start
+        global previous_interval
+        global backOff_cutOff
+        global lease_time_start
+        global Lease_time
+
+        while discovery_timer_start > 0:
+
+            discovery_timer_start -= 1
+            time.sleep(1)
+
+
+
+        if received_ip is None or time.time()-lease_time_start > Lease_time:
+
+            if received_ip is None:
+                print("dhcp timer time out start again")
+            if time.time()-lease_time_start > Lease_time:
+                print("lease time finished start again")
+
+            new_timer = 2 * previous_interval * (random.randint(0, 100)/100)
+
+            if new_timer <= backOff_cutOff:
+
+                discovery_timer_start = new_timer
+
+
+            else:
+
+                discovery_timer_start = backOff_cutOff
+
+            previous_interval = discovery_timer_start
+            lease_time_start = time.time()
+            self.start_communicate(s, dest)
 
 
 
@@ -106,8 +153,8 @@ class DHCP_client(object):
 
     def getMacInBytes(self):
         mac = generateMac.getRandomMac()
-        print(type(mac))
-        print(mac)
+        # print(type(mac))
+        print("mac address: ", mac)
         macbytes = binascii.unhexlify(mac)
         return macbytes
 
